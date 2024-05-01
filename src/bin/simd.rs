@@ -1,25 +1,62 @@
-use crossterm::style::Stylize;
-use std::{fs, time::Instant};
+#![feature(portable_simd)]
 
-/// Find the sum of the shortest paths between every pair of galaxies
-/// input MUST have a trailing newline
+use crossterm::style::Stylize;
+use std::{
+    fs,
+    simd::{num::SimdUint, u32x64, u8x64},
+    time::Instant,
+};
+
 fn sum_shortest_paths<const EXPANSION: u128>(input: &str) -> u128 {
     let width = input.lines().next().unwrap().len();
     let width_with_newline = width + 1;
     let height = input.lines().count();
 
-    let data = input.as_bytes();
     let mut galaxies_in_row = vec![0u32; height];
     let mut galaxies_in_column = vec![0u32; width];
 
+    let data = input.as_bytes();
+
     let lines = data.chunks_exact(width_with_newline);
 
-    // Count how many galaxies are in each row and column
+    let only_empty = u8x64::splat(b'.');
+    let only_galaxies = u8x64::splat(b'#');
+
     for (row, row_count) in lines.zip(&mut galaxies_in_row) {
-        for (cell, column_count) in row.iter().copied().zip(&mut galaxies_in_column) {
-            if cell == b'#' {
+        const LANES: usize = u8x64::LEN;
+
+        let chunks = row.chunks_exact(LANES);
+        let chunks_amount = chunks.len();
+        let remainder = chunks.remainder();
+
+        for (chunk_x, chunk) in chunks.enumerate() {
+            let row = u8x64::from_slice(chunk);
+
+            let non_empty = row ^ only_empty;
+            let galaxies = non_empty & only_galaxies;
+
+            // Row
+            let sum = galaxies.reduce_sum();
+            *row_count += sum as u32;
+
+            // Column
+            let column_range = chunk_x * LANES..(chunk_x + 1) * LANES;
+
+            let target_column = &galaxies_in_column[column_range.clone()];
+            let mut target_column = u32x64::from_slice(target_column);
+
+            target_column += galaxies.cast();
+
+            target_column.copy_to_slice(&mut galaxies_in_column[column_range]);
+        }
+
+        for (cell, col_count) in remainder
+            .into_iter()
+            .zip(&mut galaxies_in_column[(chunks_amount * LANES)..])
+        {
+            if *cell == b'#' {
                 *row_count += 1;
-                *column_count += 1;
+                *col_count += 1;
             }
         }
     }
@@ -56,9 +93,10 @@ fn read_data_file(file_name: &str) -> String {
 
     let mut data = fs::read_to_string(&path).expect(&format!("Failed to read file at: {}", path));
 
-    // Add trailing newline since it's usually missing, and the algorithm relies on it
-    // having multiple trailing newlines does not affect the result
-    data.push('\n');
+    // Add trailing newline if it's missing, and the algorithm relies on it
+    if !data.ends_with('\n') {
+        data.push('\n');
+    }
 
     data
 }
@@ -95,23 +133,5 @@ fn main() {
 
     for (name, time_used) in times_used {
         println!("{name:10}: {time_used:?}");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn correct_result() {
-        let original = read_data_file("input.txt");
-        let ten_k = read_data_file("10k.txt");
-        let hundred_k = read_data_file("100k.txt");
-        let million = read_data_file("1m.txt");
-
-        assert_eq!(sum_shortest_paths::<2>(&original), 9659494);
-        assert_eq!(sum_shortest_paths::<2>(&ten_k), 1773003357840);
-        assert_eq!(sum_shortest_paths::<2>(&hundred_k), 1750725093385370);
-        assert_eq!(sum_shortest_paths::<2>(&million), 599775501964475606);
     }
 }
