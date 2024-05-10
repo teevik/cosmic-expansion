@@ -1,23 +1,26 @@
 #![feature(portable_simd)]
 
-use crossterm::style::Stylize;
+use memchr::memchr;
+use memmap::Mmap;
 use std::{
-    fs,
+    fs::File,
     simd::{num::SimdUint, u32x64, u8x64},
-    time::Instant,
 };
 
-fn sum_shortest_paths<const EXPANSION: u128>(input: &str) -> u128 {
-    let width = input.lines().next().unwrap().len();
+const EXPANSION: u128 = 2;
+
+fn solve() -> u128 {
+    let file = File::open("data/10m.txt").expect("open file");
+    let data = unsafe { Mmap::map(&file).expect("mmap file") };
+
+    let width = memchr(b'\n', &data).expect("find newline");
     let width_with_newline = width + 1;
-    let height = input.lines().count();
+    let height = data.len() / width_with_newline + 1; // `+ 1`` because the last line doesn't have a trailing newline
 
     let mut galaxies_in_row = vec![0u32; height];
     let mut galaxies_in_column = vec![0u32; width];
 
-    let data = input.as_bytes();
-
-    let lines = data.chunks_exact(width_with_newline);
+    let lines = data.chunks(width_with_newline);
 
     let only_empty = u8x64::splat(b'.');
     let only_galaxies = u8x64::splat(b'#');
@@ -29,6 +32,7 @@ fn sum_shortest_paths<const EXPANSION: u128>(input: &str) -> u128 {
         let chunks_amount = chunks.len();
         let remainder = chunks.remainder();
 
+        // Process the chunks
         for (chunk_x, chunk) in chunks.enumerate() {
             let row = u8x64::from_slice(chunk);
 
@@ -50,6 +54,7 @@ fn sum_shortest_paths<const EXPANSION: u128>(input: &str) -> u128 {
             target_column.copy_to_slice(&mut galaxies_in_column[column_range]);
         }
 
+        // Process the remainder
         for (cell, col_count) in remainder
             .into_iter()
             .zip(&mut galaxies_in_column[(chunks_amount * LANES)..])
@@ -88,50 +93,11 @@ fn sum_shortest_paths<const EXPANSION: u128>(input: &str) -> u128 {
     answer
 }
 
-fn read_data_file(file_name: &str) -> String {
-    let path = "./data/".to_owned() + file_name;
-
-    let mut data = fs::read_to_string(&path).expect(&format!("Failed to read file at: {}", path));
-
-    // Add trailing newline if it's missing, and the algorithm relies on it
-    if !data.ends_with('\n') {
-        data.push('\n');
-    }
-
-    data
-}
-
 fn main() {
-    let inputs = [
-        ("original", "input.txt"),
-        ("10k", "10k.txt"),
-        ("50k", "50k.txt"),
-        ("100k", "100k.txt"),
-        ("500k", "500k.txt"),
-        ("1m", "1m.txt"),
-        ("10m", "10m.txt"),
-    ];
+    let start = std::time::Instant::now();
+    let result = solve();
+    let elapsed = start.elapsed();
 
-    println!("{}", "Results:".bold().blue());
-
-    let mut times_used = Vec::new();
-
-    // Run the algorithm on each input and print the result, store the time used
-    for (name, file_name) in inputs {
-        let input = read_data_file(file_name);
-
-        let start_time = Instant::now();
-        let result = sum_shortest_paths::<2>(&input);
-        let time_used = start_time.elapsed();
-
-        println!("{name:10}: {result}");
-        times_used.push((name, time_used));
-    }
-
-    println!();
-    println!("{}", "Time used:".bold().blue());
-
-    for (name, time_used) in times_used {
-        println!("{name:10}: {time_used:?}");
-    }
+    println!("Elapsed: {elapsed:?}",);
+    println!("Result: {result}");
 }

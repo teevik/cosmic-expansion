@@ -1,19 +1,22 @@
-use crossterm::style::Stylize;
-use std::{fs, time::Instant};
+use memchr::memchr;
+use memmap::Mmap;
+use std::fs::File;
 
-/// Find the sum of the shortest paths between every pair of galaxies
-/// input MUST have a trailing newline
-fn sum_shortest_paths<const EXPANSION: u128>(input: &str) -> u128 {
-    let width = input.lines().next().unwrap().len();
+const EXPANSION: u128 = 2;
+
+fn solve() -> u128 {
+    let file = File::open("data/10m.txt").expect("open file");
+    let data = unsafe { Mmap::map(&file).expect("mmap file") };
+
+    let width = memchr(b'\n', &data).expect("find newline");
     let width_with_newline = width + 1;
-    let height = input.lines().count();
+    let height = data.len() / width_with_newline + 1; // `+ 1`` because the last line doesn't have a trailing newline
 
-    let data = input.as_bytes();
     let mut galaxies_in_row = vec![0u32; height];
     let mut galaxies_in_column = vec![0u32; width];
-    let lines = data.chunks_exact(width_with_newline);
 
-    // Count how many galaxies are in each row and column
+    let lines = data.chunks(width_with_newline);
+
     for (row, row_count) in lines.zip(&mut galaxies_in_row) {
         for (cell, column_count) in row.iter().copied().zip(&mut galaxies_in_column) {
             if cell == b'#' {
@@ -50,68 +53,11 @@ fn sum_shortest_paths<const EXPANSION: u128>(input: &str) -> u128 {
     answer
 }
 
-fn read_data_file(file_name: &str) -> String {
-    let path = "./data/".to_owned() + file_name;
-
-    let mut data = fs::read_to_string(&path).expect(&format!("Failed to read file at: {}", path));
-
-    // Add trailing newline if it's missing, and the algorithm relies on it
-    if !data.ends_with('\n') {
-        data.push('\n');
-    }
-
-    data
-}
-
 fn main() {
-    let inputs = [
-        ("original", "input.txt"),
-        ("10k", "10k.txt"),
-        ("50k", "50k.txt"),
-        ("100k", "100k.txt"),
-        ("500k", "500k.txt"),
-        ("1m", "1m.txt"),
-        ("10m", "10m.txt"),
-    ];
+    let start = std::time::Instant::now();
+    let result = solve();
+    let elapsed = start.elapsed();
 
-    println!("{}", "Results:".bold().blue());
-
-    let mut times_used = Vec::new();
-
-    // Run the algorithm on each input and print the result, store the time used
-    for (name, file_name) in inputs {
-        let input = read_data_file(file_name);
-
-        let start_time = Instant::now();
-        let result = sum_shortest_paths::<2>(&input);
-        let time_used = start_time.elapsed();
-
-        println!("{name:10}: {result}");
-        times_used.push((name, time_used));
-    }
-
-    println!();
-    println!("{}", "Time used:".bold().blue());
-
-    for (name, time_used) in times_used {
-        println!("{name:10}: {time_used:?}");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn correct_result() {
-        let original = read_data_file("input.txt");
-        let ten_k = read_data_file("10k.txt");
-        let hundred_k = read_data_file("100k.txt");
-        let million = read_data_file("1m.txt");
-
-        assert_eq!(sum_shortest_paths::<2>(&original), 9659494);
-        assert_eq!(sum_shortest_paths::<2>(&ten_k), 1773003357840);
-        assert_eq!(sum_shortest_paths::<2>(&hundred_k), 1750725093385370);
-        assert_eq!(sum_shortest_paths::<2>(&million), 599775501964475606);
-    }
+    println!("Elapsed: {elapsed:?}",);
+    println!("Result: {result}");
 }
